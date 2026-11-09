@@ -1,11 +1,26 @@
+// using Microsoft.EntityFrameworkCore;
+
+// var builder = WebApplication.CreateBuilder(args);
+
+// var connectionString = builder.Configuration.GetConnectionString("Default")
+//     ?? throw new InvalidOperationException("Connection string 'Default' is missing");
+
+// builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(connectionString));
+
+// var app = builder.Build();
+
+
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? throw new InvalidOperationException("Connection string 'Default' is missing");
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    var connectionString = builder.Configuration.GetConnectionString("Default")
+        ?? throw new InvalidOperationException("Connection string 'Default' is missing");
 
-builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(connectionString));
+    builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(connectionString));
+}
 
 var app = builder.Build();
 
