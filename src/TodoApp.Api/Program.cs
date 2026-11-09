@@ -1,40 +1,69 @@
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = builder.Configuration.GetConnectionString("Default")
+    ?? throw new InvalidOperationException("Connection string 'Default' is missing");
+
+builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(connectionString));
+
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated();
+}
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-var todos = new List<TodoItem>();
-var nextId = 1;
+app.MapGet("/api/todos", async (AppDbContext db) =>
+    await db.Todos.OrderBy(t => t.Id).ToListAsync());
 
-app.MapGet("/api/todos", () => todos);
-
-app.MapPost("/api/todos", (CreateTodo input) =>
+app.MapPost("/api/todos", async (CreateTodo input, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(input.Title))
         return Results.BadRequest("Title is required");
 
-    var item = new TodoItem(nextId++, input.Title.Trim(), false);
-    todos.Add(item);
+    var item = new TodoItem { Title = input.Title.Trim() };
+    db.Todos.Add(item);
+    await db.SaveChangesAsync();
     return Results.Created($"/api/todos/{item.Id}", item);
 });
 
-app.MapPut("/api/todos/{id}/toggle", (int id) =>
+app.MapPut("/api/todos/{id}/toggle", async (int id, AppDbContext db) =>
 {
-    var index = todos.FindIndex(t => t.Id == id);
-    if (index < 0) return Results.NotFound();
+    var item = await db.Todos.FindAsync(id);
+    if (item is null) return Results.NotFound();
 
-    todos[index] = todos[index] with { IsDone = !todos[index].IsDone };
-    return Results.Ok(todos[index]);
+    item.IsDone = !item.IsDone;
+    await db.SaveChangesAsync();
+    return Results.Ok(item);
 });
 
-app.MapDelete("/api/todos/{id}", (int id) =>
+app.MapDelete("/api/todos/{id}", async (int id, AppDbContext db) =>
 {
-    var removed = todos.RemoveAll(t => t.Id == id);
-    return removed == 0 ? Results.NotFound() : Results.NoContent();
+    var item = await db.Todos.FindAsync(id);
+    if (item is null) return Results.NotFound();
+
+    db.Todos.Remove(item);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
 });
 
 app.Run();
 
-record TodoItem(int Id, string Title, bool IsDone);
 record CreateTodo(string Title);
+
+class TodoItem
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public bool IsDone { get; set; }
+}
+
+class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+{
+    public DbSet<TodoItem> Todos => Set<TodoItem>();
+}
