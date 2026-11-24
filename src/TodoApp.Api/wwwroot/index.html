@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
@@ -23,12 +23,32 @@
     <button>إضافة</button>
   </form>
 
+  <div id="paywall" style="display:none; margin-top:16px; padding:12px; background:#fff3cd; border-radius:6px;">
+  <p>وصلت الحد المجاني (5 مهام). ادفع 5$ لفتح عدد غير محدود.</p>
+  <button id="payBtn">ادفع الآن</button>
+  </div>
+
   <ul id="list"></ul>
 
   <script>
     const list = document.getElementById('list');
     const form = document.getElementById('form');
     const titleInput = document.getElementById('title');
+    
+    async function checkStatus() {
+    const res = await fetch('/api/status');
+    const status = await res.json();
+    document.getElementById('paywall').style.display =
+    (!status.isUnlocked && status.count >= status.freeLimit) ? 'block' : 'none';
+      }
+
+    document.getElementById('payBtn').onclick = async () => {
+    const res = await fetch('/api/checkout', { method: 'POST' });
+    const data = await res.json();
+    window.location.href = data.url;
+      };
+
+
 
     async function load() {
       const res = await fetch('/api/todos');
@@ -55,6 +75,7 @@
         li.append(span, del);
         list.append(li);
       }
+      await checkStatus(); 
     }
 
     form.onsubmit = async (e) => {
@@ -69,6 +90,131 @@
     };
 
     load();
+  </script>
+</body>
+</html> -->
+
+
+
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>مواقف السيارات</title>
+  <style>
+    body { font-family: Tahoma, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 16px; }
+    .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 20px; }
+    .spot {
+      aspect-ratio: 1;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      border-radius: 8px; cursor: pointer; font-weight: bold; color: white; border: none;
+    }
+    .spot.free { background: #22c55e; }
+    .spot.occupied { background: #ef4444; cursor: not-allowed; }
+    .spot small { font-weight: normal; font-size: 10px; margin-top: 4px; }
+
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      align-items: center; justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: white; padding: 20px; border-radius: 10px; width: 280px; text-align: center;
+    }
+    .modal input { width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; }
+    .modal button { padding: 8px 16px; margin: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>مواقف السيارات المتاحة</h1>
+  <div class="grid" id="grid"></div>
+
+  <div class="modal-backdrop" id="backdrop">
+    <div class="modal">
+      <h3 id="modalTitle"></h3>
+      <label>عدد الساعات:</label>
+      <input type="number" id="hoursInput" min="0.5" step="0.5" value="1">
+      <p id="priceText"></p>
+      <button id="confirmBtn">ادفع واحجز</button>
+      <button id="cancelBtn">إلغاء</button>
+    </div>
+  </div>
+
+  <script>
+    const RATE_PER_HOUR = 2; // دولار، لعرض السعر فقط. الحساب الحقيقي يصير بالسيرفر
+    const grid = document.getElementById('grid');
+    const backdrop = document.getElementById('backdrop');
+    const hoursInput = document.getElementById('hoursInput');
+    const priceText = document.getElementById('priceText');
+    let selectedSpotId = null;
+
+    function formatRemaining(endTime) {
+      const ms = new Date(endTime) - new Date();
+      if (ms <= 0) return 'انتهى';
+      const mins = Math.floor(ms / 60000);
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h}س ${m}د متبقية`;
+    }
+
+    async function load() {
+      const res = await fetch('/api/spots');
+      const spots = await res.json();
+      grid.innerHTML = '';
+      for (const spot of spots) {
+        const div = document.createElement('div');
+        div.className = `spot ${spot.isOccupied ? 'occupied' : 'free'}`;
+        div.innerHTML = `${spot.number}` +
+          (spot.isOccupied && spot.endTime ? `<small>${formatRemaining(spot.endTime)}</small>` : '');
+        if (!spot.isOccupied) {
+          div.onclick = () => openModal(spot);
+        }
+        grid.append(div);
+      }
+    }
+
+    function openModal(spot) {
+      selectedSpotId = spot.id;
+      document.getElementById('modalTitle').textContent = `موقف رقم ${spot.number}`;
+      hoursInput.value = 1;
+      updatePrice();
+      backdrop.classList.add('open');
+    }
+
+    function updatePrice() {
+      const hours = parseFloat(hoursInput.value) || 0;
+      priceText.textContent = `السعر التقريبي: ${(hours * RATE_PER_HOUR).toFixed(2)}$`;
+    }
+    hoursInput.oninput = updatePrice;
+
+    document.getElementById('cancelBtn').onclick = () => {
+      backdrop.classList.remove('open');
+    };
+
+    document.getElementById('confirmBtn').onclick = async () => {
+      const hours = parseFloat(hoursInput.value);
+      if (!hours || hours <= 0) return;
+
+      const res = await fetch('/api/reserve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spotId: selectedSpotId, hours })
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        alert('خطأ: ' + text);
+        return;
+      }
+
+      const data = await res.json();
+      window.location.href = data.url;
+    };
+
+    load();
+    setInterval(load, 10000); // تحديث كل 10 ثواني لعرض الوقت المتبقي
   </script>
 </body>
 </html>
