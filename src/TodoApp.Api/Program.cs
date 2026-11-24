@@ -20,10 +20,29 @@ const int RatePerHourCents = 200;
 
 var app = builder.Build();
 
+// using (var scope = app.Services.CreateScope())
+// {
+//     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+//     db.Database.Migrate();
+
+//     if (!db.Spots.Any())
+//     {
+//         for (var i = 1; i <= SpotCount; i++)
+//             db.Spots.Add(new ParkingSpot { Number = i, IsOccupied = false });
+//         await db.SaveChangesAsync();
+//     }
+// }
+
+
+
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+
+    if (!app.Environment.IsEnvironment("Testing"))
+        db.Database.Migrate();
+    else
+        db.Database.EnsureCreated();
 
     if (!db.Spots.Any())
     {
